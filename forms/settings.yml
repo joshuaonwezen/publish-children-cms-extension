@@ -1,0 +1,20 @@
+sections:
+  - key: cms
+    label: CMS API client
+    elements:
+      - type: text
+        key: clientId
+        label: Client ID
+        help: >-
+          From CMS Settings > API Keys, for an API client that may publish content: the sidebar reads the
+          open item's child items, drafts included, and publishes the versions an editor picks. Publishes are
+          made as this API client, not as the editor, so any editor who can open the panel can publish the
+          open item's child items, and the CMS history shows this client as the author.
+      - type: secret
+        key: clientSecret
+        label: Client secret
+        help: Shown once when the API client is created. Leave blank to keep the saved one.
+      - type: button
+        label: Save
+        action: saveCms
+        style: primary

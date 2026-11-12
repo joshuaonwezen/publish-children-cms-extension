@@ -1,0 +1,26 @@
+meta:
+  app_id: cms_publish_children
+  display_name: Publish children
+  version: 0.0.1-dev.0
+  vendor: optimizely
+  summary: See which child items of a page have unpublished changes, and publish the ones you pick in one go.
+  support_url: https://www.optimizely.com
+  contact_email: joshua.onwezen@optimizely.com
+  categories:
+    - Testing & Utilities
+  availability:
+    - all
+
+runtime: node22-cms-ext
+
+functions:
+  cms_extension:
+    entry_point: CmsUiExtension
+    description: Lists the open item's child items with their publish state and publishes the chosen versions through the CMS REST API.
+    accepts: cms_ui_extension
+
+ui_extensions:
+  sidebar:
+    - name: publish-children
+      entry_point: PublishChildren
+      display_name: Publish children
