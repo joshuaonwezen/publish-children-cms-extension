@@ -1,7 +1,7 @@
 meta:
   app_id: cms_publish_children
   display_name: Publish children
-  version: 0.0.1-dev.1
+  version: 0.0.1-dev.2
   vendor: optimizely
   summary: See which child items of a page have unpublished changes, and publish the ones you pick in one go.
   support_url: https://www.optimizely.com
