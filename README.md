@@ -102,4 +102,4 @@ Publishing a new dev version moves existing installs onto it.
 | `src/backend/lib/errors.ts` | `ActionError` (400) and `NotConfiguredError` (412) |
 | `src/backend/lib/children.ts` | Version paging, the per-child state, the list, and the checked publish |
 | `src/backend/lib/cms.ts` | CMS REST: token, item, children, versions, publish |
-| `src/cms-ui-extensions/publish-children/` | `PublishChildren.sidebar.tsx`, selection and report helpers (`selection.ts`), language names and dates (`format.ts`) |
+| `src/cms-ui-extensions/publish-children/` | `PublishChildren.sidebar.tsx`, selection and report helpers (`selection.ts`), language names and dates in English, never the browser's language (`format.ts`) |

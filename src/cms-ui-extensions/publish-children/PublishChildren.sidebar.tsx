@@ -1,4 +1,4 @@
-import {Alert, Badge, Button, Checkbox, Disclosure, DisclosureContent, DisclosureTrigger, Group, Separator, Text} from '@optiaxiom/react';
+import {Alert, Button, Checkbox, Disclosure, DisclosureContent, DisclosureTrigger, Group, Text} from '@optiaxiom/react';
 import {register, type ExtensionContext} from '@optimizely/cms-extensibility-sdk';
 import {PUBLISH_BATCH_SIZE} from '@shared/constants';
 import type {ChildList, ChildRow, ChildState, PublishResult} from '@shared/types';
@@ -6,22 +6,29 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 
 import {call} from '../common/api';
 import {Frame} from '../common/Frame';
+import {Chip, count, type ChipState, type IconName} from '../common/ui';
 import {useContent} from '../common/useContent';
 import {languageLabel, languageName, shortDate} from './format';
 import {applyResults, batches, changedKeys, isPublishable, picksFor, report, type Report} from './selection';
 
-type Intent = 'success' | 'warning' | 'information' | 'neutral' | 'danger';
-
-const STATE: Record<ChildState, {label: string; intent: Intent}> = {
-  changes: {label: 'Unpublished changes', intent: 'warning'},
-  new: {label: 'Not yet live', intent: 'information'},
-  published: {label: 'Published', intent: 'success'},
-  missing: {label: 'No version', intent: 'neutral'},
-  other: {label: 'Other state', intent: 'neutral'},
-  error: {label: "Couldn't load", intent: 'danger'},
+const STATE: Record<ChildState, {label: string; state: ChipState; icon?: IconName}> = {
+  changes: {label: 'Unpublished changes', state: 'draft'},
+  new: {label: 'Not yet live', state: 'neutral', icon: 'clock'},
+  published: {label: 'Published', state: 'good'},
+  missing: {label: 'No version', state: 'neutral'},
+  other: {label: 'Other state', state: 'neutral', icon: 'clock'},
+  error: {label: "Couldn't load", state: 'bad'},
 };
 
-const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// The CMS's version statuses in words: "inReview" -> "In review".
+const STATUS_WORDS: Record<string, string> = {inreview: 'In review', ready: 'Ready to publish', scheduled: 'Scheduled'};
+
+function statusWords(status: string): string {
+  const known = STATUS_WORDS[status.toLowerCase()];
+  if (known) return known;
+  const words = status.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 // The CMS's reads lag a moment behind a publish; reloading sooner can show a draft again.
 const RELOAD_AFTER_PUBLISH_MS = 2000;
@@ -31,7 +38,7 @@ const byWhom = (who: string | null) => (who && who.includes('@') ? ` by ${who}` 
 
 function stateLabel(row: ChildRow, locale: string): string {
   if (row.state === 'missing') return row.locales.length === 0 ? 'No language versions' : `No ${languageName(locale)} version`;
-  if (row.state === 'other') return row.status ? `Newest is ${row.status}` : STATE.other.label;
+  if (row.state === 'other') return row.status ? statusWords(row.status) : STATE.other.label;
   return STATE[row.state].label;
 }
 
@@ -48,30 +55,23 @@ function Child({row, locale, picked, disabled, onToggle}: {
     row.version ? `version ${row.version}` : '',
     when ? `changed ${when}${byWhom(row.lastModifiedBy)}` : '',
   ].filter(Boolean);
+  const chip = STATE[row.state];
   return (
-    <Group flexDirection="column" gap="4">
+    <div className="ui-item">
       <Checkbox checked={picked} disabled={disabled || !isPublishable(row)} onCheckedChange={(on) => onToggle(row.key, on)}>
-        {row.displayName}
+        <span style={{fontWeight: 500}}>{row.displayName}</span>
       </Checkbox>
-      <Group alignItems="center" flexWrap="wrap" gap="8" pl="24">
-        <Badge intent={STATE[row.state].intent} variant="subtle">
-          {stateLabel(row, locale)}
-        </Badge>
-        <Text color="fg.secondary" fontSize="xs">
-          {details.join(' · ')}
-        </Text>
+      <Group alignItems="start" flexDirection="column" gap="4" pl="24">
+        <Chip icon={chip.icon} label={stateLabel(row, locale)} state={chip.state} />
+        {details.length > 0 && <span className="ui-faint ui-small">{details.join(' · ')}</span>}
+        {row.variationDrafts > 0 && (
+          <span className="ui-muted ui-small">
+            {count(row.variationDrafts, 'variation has', 'variations have')} a draft too: publish variations in Visual Builder.
+          </span>
+        )}
+        {row.state === 'error' && <span className="ui-muted ui-small">Its versions couldn&apos;t be read. Refresh to try again.</span>}
       </Group>
-      {row.variationDrafts > 0 && (
-        <Text color="fg.tertiary" fontSize="xs" pl="24">
-          {count(row.variationDrafts, 'variation has', 'variations have')} a draft too: publish variations in Visual Builder.
-        </Text>
-      )}
-      {row.state === 'error' && (
-        <Text color="fg.tertiary" fontSize="xs" pl="24">
-          Its versions couldn&apos;t be read. Refresh to try again.
-        </Text>
-      )}
-    </Group>
+    </div>
   );
 }
 
@@ -95,7 +95,7 @@ function HowItWorks() {
     <Disclosure>
       <DisclosureTrigger>How this works</DisclosureTrigger>
       <DisclosureContent>
-        <Group flexDirection="column" gap="8">
+        <Group flexDirection="column" gap="8" pt="4">
           <Text color="fg.secondary" fontSize="xs">
             The list shows the open item&apos;s direct child items in one language. An item can be ticked when its newest
             version is a draft: newer than the published one (unpublished changes), or never published (not yet live).
@@ -239,19 +239,33 @@ function PublishChildren({context}: {context: ExtensionContext}) {
   }
 
   const subtitle = list
-    ? `${count(list.total, 'child item')} · ${languageLabel(locale)}${list.items.length < list.total ? ` · ${list.items.length} shown` : ''}`
+    ? [
+        count(list.total, 'child item'),
+        // With one language there is no picker to show it.
+        list.locales.length > 1 ? '' : languageLabel(locale),
+        list.items.length < list.total ? `${list.items.length} shown` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ')
     : undefined;
+  const refreshButton = list ? (
+    <Button appearance="subtle" disabled={busy || publishing} onClick={refresh} size="sm">
+      Refresh
+    </Button>
+  ) : undefined;
 
   return (
-    <Frame busy={busy || publishing} error={error} onRetry={refresh} subtitle={subtitle}>
+    <Frame actions={refreshButton} busy={busy || publishing} error={error} onRetry={refresh} subtitle={subtitle}>
       {list && list.locales.length > 1 && (
         <Group alignItems="center" gap="8">
-          <Text fontSize="sm">Language</Text>
+          <span className="ui-muted" style={{fontSize: 13}}>
+            Language
+          </span>
           <select
             aria-label="Language"
+            className="ui-select"
             disabled={publishing}
             onChange={(e) => chooseLocale(e.target.value)}
-            style={{flex: 1, minWidth: 0, font: 'inherit', fontSize: 13, padding: '4px 6px'}}
             value={locale}
           >
             {list.locales.map((l) => (
@@ -272,45 +286,47 @@ function PublishChildren({context}: {context: ExtensionContext}) {
       )}
 
       {rows.length > 0 && (
-        <Group flexWrap="wrap" gap="8" justifyContent="space-between">
-          <Group gap="8">
-            <Button
-              appearance="subtle"
-              disabled={publishing || changed.length === 0}
-              onClick={() => {
-                setConfirming(false);
-                setPicked(new Set(changed));
-              }}
-              size="sm"
-            >
-              Select all changes ({changed.length})
-            </Button>
-            {picked.size > 0 && (
-              <Button appearance="subtle" disabled={publishing} onClick={() => setPicked(new Set())} size="sm">
-                Clear
+        <div className="ui-card">
+          <div className="ui-card-title">
+            <Group gap="4">
+              <Button
+                appearance="subtle"
+                disabled={publishing || changed.length === 0}
+                onClick={() => {
+                  setConfirming(false);
+                  setPicked(new Set(changed));
+                }}
+                size="sm"
+              >
+                Select all changes ({changed.length})
               </Button>
-            )}
-          </Group>
-          <Button appearance="subtle" disabled={busy || publishing} onClick={refresh} size="sm">
-            Refresh
-          </Button>
-        </Group>
+              {picked.size > 0 && (
+                <Button appearance="subtle" disabled={publishing} onClick={() => setPicked(new Set())} size="sm">
+                  Clear
+                </Button>
+              )}
+            </Group>
+            <span className="ui-faint ui-small">{picks.length > 0 ? `${picks.length} ticked` : ''}</span>
+          </div>
+          <div>
+            {rows.map((row) => (
+              <Child disabled={publishing} key={row.key} locale={locale} onToggle={toggle} picked={picked.has(row.key)} row={row} />
+            ))}
+          </div>
+          {list?.hasMore && (
+            <div>
+              <Button
+                appearance="subtle"
+                disabled={busy || publishing}
+                onClick={() => key && void load(key, locale, list.pageIndex + 1)}
+                size="sm"
+              >
+                Load more ({list.total - list.items.length} left)
+              </Button>
+            </div>
+          )}
+        </div>
       )}
-
-      {rows.map((row) => (
-        <Group flexDirection="column" gap="8" key={row.key}>
-          <Separator />
-          <Child disabled={publishing} locale={locale} onToggle={toggle} picked={picked.has(row.key)} row={row} />
-        </Group>
-      ))}
-
-      {list?.hasMore && (
-        <Button appearance="subtle" disabled={busy || publishing} onClick={() => key && void load(key, locale, list.pageIndex + 1)} size="sm">
-          Load more
-        </Button>
-      )}
-
-      {rows.length > 0 && <Separator />}
 
       {progress && (
         <Text color="fg.secondary" fontSize="sm">
@@ -337,9 +353,17 @@ function PublishChildren({context}: {context: ExtensionContext}) {
         </Alert>
       ) : (
         rows.length > 0 && (
-          <Button appearance="primary" disabled={publishing || picks.length === 0} loading={publishing} onClick={() => setConfirming(true)} size="sm">
-            {picks.length > 0 ? `Publish ${count(picks.length, 'item')}` : 'Tick items to publish'}
-          </Button>
+          <Group alignItems="center" gap="8">
+            <Button
+              appearance="primary"
+              disabled={publishing || picks.length === 0}
+              loading={publishing}
+              onClick={() => setConfirming(true)}
+            >
+              {picks.length > 0 ? `Publish ${count(picks.length, 'item')}` : 'Publish'}
+            </Button>
+            {picks.length === 0 && !publishing && <span className="ui-faint ui-small">Tick the items to publish.</span>}
+          </Group>
         )
       )}
 
